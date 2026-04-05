@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use clap::Parser;
 use log::info;
 use std::path::PathBuf;
@@ -6,6 +6,7 @@ use std::time::Duration;
 
 mod file;
 mod http;
+mod systemd;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -73,23 +74,56 @@ struct Config {
         default_value = "30"
     )]
     timeout: Duration,
+
+    #[arg(
+        short = 'y',
+        long,
+        help = "use systemd to set the timezone instead of build-in method",
+    )]
+    systemd: bool,
 }
 
 fn parse_secs(arg: &str) -> Result<Duration> {
     Ok(Duration::from_secs(arg.parse()?))
 }
 
+fn set_tz(tz: &str, cfg: Config) -> Result<()> {
+    if cfg.print_only { return Ok(()) }
+
+    if cfg.systemd {
+        systemd::set_tz(tz)?;
+    } else {
+        file::link_localtime(
+            tz,
+            cfg.localtime_path,
+            cfg.zoneinfo_path,
+        )?;
+        file::write_timezone(
+            tz,
+            cfg.debian_timezone_path,
+            cfg.always_write_debian_timezone,
+        )?;
+    }
+    return Ok(());
+}
+
 fn main() -> Result<()> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("warn"));
 
     let cfg = Config::parse();
-    let tz = match cfg.timezone {
+    let tz = match cfg.timezone.clone() {
         Some(tz) => tz,
         None => {
             if cfg.consensus {
-                http::get_timezone_consensus(cfg.ip.unwrap_or_default(), cfg.timeout)?
+                http::get_timezone_consensus(
+                    cfg.ip.clone().unwrap_or_default(),
+                    cfg.timeout,
+                )?
             } else {
-                http::get_timezone_first(cfg.ip.unwrap_or_default(), cfg.timeout)?
+                http::get_timezone_first(
+                    cfg.ip.clone().unwrap_or_default(),
+                    cfg.timeout,
+                )?
             }
         }
     };
@@ -100,12 +134,7 @@ fn main() -> Result<()> {
     }
 
     info!("Got timezone {tz}");
-    file::link_localtime(&tz, cfg.localtime_path, cfg.zoneinfo_path)?;
-    file::write_timezone(
-        &tz,
-        cfg.debian_timezone_path,
-        cfg.always_write_debian_timezone,
-    )?;
+    set_tz(&tz, cfg)?;
     println!("Set system timezone to {tz}.");
 
     Ok(())

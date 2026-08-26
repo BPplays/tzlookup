@@ -115,12 +115,11 @@ fn parse_secs(arg: &str) -> Result<Duration> {
 }
 
 fn return_supported_feat(feat: &str) {
-    match feat.to_lowercase().as_str() {
-        feat if FEATURES_SUPPORTED.contains(&feat) => {
-            process::exit(0)
-        }
-        _ => process::exit(1),
+    if FEATURES_SUPPORTED.contains(&feat.to_lowercase().as_str()) {
+        process::exit(0);
     }
+
+    process::exit(1);
 }
 
 fn set_tz(tz: &str, cfg: Config) -> Result<()> {

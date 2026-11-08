@@ -1,12 +1,14 @@
 use anyhow::{Ok, Result};
 use clap::{Parser};
 use log::info;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::process;
 
 mod file;
-mod http;
+mod timezone_lookup;
+use timezone_lookup::PossibleTimezone;
 mod systemd;
 
 #[derive(Parser, Debug)]
@@ -24,7 +26,7 @@ struct Config {
         long,
         help = "use this IP instead of automatically detecting it"
     )]
-    ip: Option<String>,
+    ip: Option<IpAddr>,
 
     #[arg(
         short,
@@ -122,19 +124,19 @@ fn return_supported_feat(feat: &str) {
     process::exit(1);
 }
 
-fn set_tz(tz: &str, cfg: Config) -> Result<()> {
+async fn set_tz(tz: &PossibleTimezone, cfg: Config) -> Result<()> {
     if cfg.print_only { return Ok(()) }
 
     if cfg.systemd {
-        systemd::set_tz(tz)?;
+        systemd::set_tz(tz.identifier()).await?;
     } else {
         file::link_localtime(
-            tz,
+            tz.identifier(),
             cfg.localtime_path,
             cfg.zoneinfo_path,
         )?;
         file::write_timezone(
-            tz,
+            tz.identifier(),
             cfg.debian_timezone_path,
             cfg.always_write_debian_timezone,
         )?;
@@ -142,7 +144,8 @@ fn set_tz(tz: &str, cfg: Config) -> Result<()> {
     return Ok(());
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("warn"));
 
     let cfg = Config::parse();
@@ -160,16 +163,16 @@ fn main() -> Result<()> {
     }
 
     let tz = match cfg.timezone.clone() {
-        Some(tz) => tz,
+        Some(tz) => PossibleTimezone::from(tz),
         None => {
             if cfg.consensus {
-                http::get_timezone_consensus(
-                    cfg.ip.clone().unwrap_or_default(),
+                timezone_lookup::get_timezone_consensus(
+                    cfg.ip.as_ref(),
                     cfg.timeout,
                 )?
             } else {
-                http::get_timezone_first(
-                    cfg.ip.clone().unwrap_or_default(),
+                timezone_lookup::get_timezone_first(
+                    cfg.ip.as_ref(),
                     cfg.timeout,
                 )?
             }
@@ -182,7 +185,7 @@ fn main() -> Result<()> {
     }
 
     info!("Got timezone {tz}");
-    set_tz(&tz, cfg)?;
+    set_tz(&tz, cfg).await?;
     println!("Set system timezone to {tz}.");
 
     Ok(())

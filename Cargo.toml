@@ -1,6 +1,6 @@
 [package]
 name = "tzupdate"
-version = "3.1.1"
+version = "3.2.0"
 edition = "2021"
 authors = ["Chris Down <chris@chrisdown.name>"]
 description = "Set the system timezone based on IP geolocation."
@@ -10,6 +10,9 @@ keywords = ["timezone", "localtime", "geolocation"]
 categories = ["command-line-utilities"]
 license = "MIT"
 rust-version = "1.74"
+
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.99"
@@ -21,4 +24,6 @@ tempfile = "3.21.0"
 ureq = { version = "3.1.0", default-features = false, features = ["json", "rustls"] }
 zbus_systemd = { version = "0.26000.0", default-features = false, features = ["timedate1"] }
 zbus = { version = "5.14.0", default-features = false, features = ["tokio"] }
-tokio = "1.51.0"
+tokio = { version = "1.54.1", features = ["full"] }
+thiserror = "2.0.20"
+tz-rs = "0.7.3"

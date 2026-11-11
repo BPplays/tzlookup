@@ -1200,19 +1200,28 @@ checksum = "4fc6c929ffa10fb34f4a3c7e9a73620a83ef2e85e47f9ec3381b8289e6762f42"
 name = "tzlookup"
 version = "3.2.0"
 dependencies = [
- "anyhow",
- "clap",
- "env_logger",
  "log",
  "serde_json",
  "strum",
  "tempfile",
  "thiserror",
- "tokio",
  "tz-rs",
  "ureq",
  "zbus",
  "zbus_systemd",
+]
+
+[[package]]
+name = "tzlookup-cli"
+version = "3.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "env_logger",
+ "log",
+ "strum",
+ "tokio",
+ "tzlookup",
 ]
 
 [[package]]

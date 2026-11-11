@@ -4,10 +4,10 @@ use zbus::Connection;
 #[derive(Debug, thiserror::Error)]
 pub enum SetTimezoneError {
     #[error("Failed to connect to system D-Bus")]
-    Connection(#[from] zbus::Error),
+    Connection(#[source] zbus::Error),
 
     #[error("Failed to create timedated proxy")]
-    Proxy(#[from] zbus::fdo::Error),
+    Proxy(#[source] zbus::Error),
 
     #[error("Failed to set timezone to '{timezone}'")]
     SetTimezone {

@@ -1,6 +1,4 @@
-use anyhow::{bail, Context};
-use anyhow::Result as AnResult;
-use log::debug;
+use log::{debug, trace};
 use serde_json::Value;
 use std::cmp::Reverse;
 use std::collections::HashMap;
@@ -73,20 +71,74 @@ fn get_nested_value(mut data: Value, keys: &[&str]) -> Option<Value> {
 	Some(data)
 }
 
-/// A single service worker, racing with others as part of `get_timezone`.
-fn get_timezone_for_ip(url: &str, service: &GeoIPService, sender: Sender<String>) -> AnResult<()> {
-	let mut res = ureq::get(url).call()?;
-	let val = match get_nested_value(res.body_mut().read_json()?, service.tz_keys)
-		.with_context(|| format!("Invalid data for {url}"))?
-	{
-		Value::String(s) => s,
-		_ => bail!("Timezone field for {url} is not a string"),
-	};
-	debug!("Sending {val} back to main thread from {url}");
+#[derive(Debug, thiserror::Error)]
+pub enum GeoIPError {
+    #[error("Failed to request {url}: {source}")]
+    Request {
+        url: String,
+        #[source]
+        source: ureq::Error,
+    },
 
-	// Only fails if receiver is disconnected, which just means we lost the race
-	let _ = sender.send(val);
-	Ok(())
+    #[error("Failed to parse JSON response from {url}: {source}")]
+    ReadJson {
+        url: String,
+        #[source]
+        source: ureq::Error,
+    },
+
+    #[error("Invalid data for {url}")]
+    InvalidData {
+        url: String,
+    },
+
+    #[error("Timezone field for {url} is not a string")]
+    TimezoneNotString {
+        url: String,
+    },
+}
+
+/// A single service worker, racing with others as part of `get_timezone`.
+fn get_timezone_for_ip(
+    url: &str,
+    service: &GeoIPService,
+    sender: Sender<String>,
+) -> Result<(), GeoIPError> {
+    let mut res = ureq::get(url)
+        .call()
+        .map_err(|source| GeoIPError::Request {
+            url: url.to_owned(),
+            source,
+        })?;
+
+    let data = res
+        .body_mut()
+        .read_json::<Value>()
+        .map_err(|source| GeoIPError::ReadJson {
+            url: url.to_owned(),
+            source,
+        })?;
+
+	let val = get_nested_value(data, service.tz_keys)
+		.ok_or_else(|| GeoIPError::InvalidData {
+			url: url.to_owned(),
+		})?;
+
+    let val = match val {
+        Value::String(s) => s,
+        _ => {
+            return Err(GeoIPError::TimezoneNotString {
+                url: url.to_owned(),
+            });
+        }
+    };
+
+    trace!("Sending {val} back to main thread from {url}");
+
+    // Only fails if receiver is disconnected, which means we lost the race.
+    let _ = sender.send(val);
+
+    Ok(())
 }
 
 /// Spawn workers for all SERVICES and return a handle for their responses.

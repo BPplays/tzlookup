@@ -1,4 +1,3 @@
-use anyhow::Context;
 use log::{debug, trace};
 use std::{fs, result};
 use std::io::{self, Write};
@@ -39,8 +38,12 @@ fn safe_canonicalise_path(
 fn get_tmp_path(path: &Path) -> io::Result<PathBuf> {
     tempfile::Builder::new()
         .tempfile_in(
-            path.parent()
-                .context("Refusing to create temp file in root")?,
+            path.parent().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Refusing to create temp file in root",
+                )
+            })?,
         )?
         .into_temp_path()
         .canonicalize()
@@ -126,7 +129,7 @@ pub fn link_localtime(
     trace!(
         "Symlinking {} to {}",
         localtime_tmp_path.display(),
-        tz_path.display()
+        tz_path.as_ref().display()
     );
     symlink(tz_path, &localtime_tmp_path)
         .map_err(LinkLocaltimeError::CreateSymlink)?;

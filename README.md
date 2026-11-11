@@ -20,27 +20,27 @@ tzlookup is a fully automated utility to set the system time using geolocation.
 
 ## Usage
 
-    -> tzupdate
+    -> tzlookup
     Set system timezone to Europe/London.
 
 Internally, this geolocates you, gets the timezone for that geolocation, and
 then updates the system's local time zone.
 
-You can see what tzupdate would do without actually doing it by passing `-p`,
+You can set what tzlookup will do by using `-m` with (`none`, `systemd`, `file`),
 and specify an alternative IP address by using `-i`. This is not an exhaustive
-list of options, see `tzupdate --help` for that.
+list of options, see `tzlookup --help` for that.
 
 you can also use it as a library
 
 ```rust
-use tzlookup::lookup
-use tzlookup::file
+use tzlookup::lookup;
+use tzlookup::file;
 
 fn main() {
     let tz = lookup::get_timezone(
-        mode,
-        cfg.timeout,
-        cfg.ip.as_ref(),
+        lookup::TimezoneLookupStrategy::MostFrequent,
+        Duration::from_secs(5),
+        None, // don't specify an IP to lookup
     ).unwrap();
     println!("{tz}");
 
@@ -56,17 +56,17 @@ fn main() {
 
 or the systemd version (requires the 'systemd' feature)
 ```rust
-use tzlookup::lookup
+use tzlookup::lookup;
 
 // requires the feature 'systemd'
-use tzlookup::systemd
+use tzlookup::systemd;
 
 fn main() {
 
     let tz = lookup::get_timezone(
-        mode,
-        cfg.timeout,
-        cfg.ip.as_ref(),
+        lookup::TimezoneLookupStrategy::MostFrequent,
+        Duration::from_secs(5),
+        None, // don't specify an IP to lookup
     ).unwrap();
     println!("{tz}");
 

@@ -1,4 +1,4 @@
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "systemd"))]
 pub mod systemd;
 
 #[cfg(target_os = "linux")]

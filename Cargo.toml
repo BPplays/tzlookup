@@ -44,16 +44,16 @@ full = [
 ]
 
 [dependencies]
-log = "0.4.27"
-serde_json = { version = "1.0.143", default-features = false }
-tempfile = "3.21.0"
-ureq = { version = "3.1.0", default-features = false, features = ["json", "rustls"] }
-thiserror = "2.0.20"
-tz-rs = "0.7.3"
-strum = { version = "0.28.0", features = ["derive"] }
+log = "0.4"
+serde_json = { version = "1.0", default-features = false }
+tempfile = "3.21"
+ureq = { version = "3.1", default-features = false, features = ["json", "rustls"] }
+thiserror = "2.0"
+tz-rs = "0.7"
+strum = { version = "0.28", features = ["derive"] }
 
 
 
 # optional
-zbus_systemd = { version = "0.26000.0", default-features = false, features = ["timedate1"], optional = true }
-zbus = { version = "5.14.0", default-features = false, features = ["tokio"], optional = true }
+zbus_systemd = { version = "0.26000", default-features = false, features = ["timedate1"], optional = true }
+zbus = { version = "5.14", default-features = false, features = ["tokio"], optional = true }

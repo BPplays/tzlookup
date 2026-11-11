@@ -141,8 +141,16 @@ fn spawn_requests(ip_addr: Option<&IpAddr>) -> SpawnedRequests {
 	let (sender, receiver) = channel();
 
 	let ip_addr = ip_addr.map(IpAddr::to_string);
-	for (svc, sender) in SERVICES.iter().zip(std::iter::repeat(sender)) {
-		let url = svc.url.replace("{ip}", ip_addr.as_deref().unwrap_or(""));
+	for (svc, sender) in SERVICES
+		.iter()
+		.zip(std::iter::repeat(sender))
+	{
+		let url = svc.url.replace(
+			"{ip}",
+			ip_addr
+				.as_deref()
+				.unwrap_or(""),
+		);
 		// For our small number of services, this makes more sense than using a full async runtime
 		thread::spawn(move || {
 			if let Err(err) = get_timezone_for_ip(&url, svc, sender) {
@@ -282,10 +290,12 @@ fn get_timezone_consensus(
 		match receiver.recv_timeout(deadline.saturating_duration_since(now)) {
 			Ok(tz) => {
 				seen_idx += 1;
-				let entry = tallies.entry(tz.clone()).or_insert(Tally {
-					count: 0,
-					first_seen: seen_idx,
-				});
+				let entry = tallies
+					.entry(tz.clone())
+					.or_insert(Tally {
+						count: 0,
+						first_seen: seen_idx,
+					});
 				entry.count += 1;
 
 				if entry.count >= majority {

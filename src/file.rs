@@ -19,7 +19,10 @@ fn safe_canonicalise_path(
 	let base = base.as_ref();
 	let path_ref = path.as_ref();
 
-	if path_ref.canonicalize()?.starts_with(base.canonicalize()?) {
+	if path_ref
+		.canonicalize()?
+		.starts_with(base.canonicalize()?)
+	{
 		Ok(path)
 	} else {
 		Err(io::Error::other(format!(
@@ -178,7 +181,7 @@ pub fn write_debian_timezone(
 		.create(always_write)
 		.truncate(true)
 		.mode(0o644)
-		.open(&filename)
+		.open(filename)
 	{
 		Ok(file) => file,
 		Err(err) if err.kind() == io::ErrorKind::NotFound => {
@@ -249,7 +252,9 @@ mod tests {
 
 		let zoneinfo_path = temp_path.join("zoneinfo");
 		fs::create_dir_all(&zoneinfo_path).unwrap();
-		let tz_file = zoneinfo_path.join("America").join("Toronto");
+		let tz_file = zoneinfo_path
+			.join("America")
+			.join("Toronto");
 		fs::create_dir_all(tz_file.parent().unwrap()).unwrap();
 		fs::write(&tz_file, "fake timezone data").unwrap();
 

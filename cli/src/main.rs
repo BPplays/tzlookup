@@ -6,7 +6,6 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
-use strum;
 
 use tzlookup::file;
 use tzlookup::lookup;
@@ -134,7 +133,11 @@ async fn main() -> AnResult<()> {
 		return AnOk(());
 	}
 
-	if let Some(feature) = cfg.feature_test.as_deref().filter(|s| !s.trim().is_empty()) {
+	if let Some(feature) = cfg
+		.feature_test
+		.as_deref()
+		.filter(|s| !s.trim().is_empty())
+	{
 		return_supported_feat(feature)
 	}
 

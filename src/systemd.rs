@@ -17,7 +17,7 @@ pub enum SetTimezoneError {
 	},
 }
 
-pub async fn set_tz(tz: &str) -> Result<(), SetTimezoneError> {
+pub async fn set_tz(tz: &str) -> Result<(), Box<SetTimezoneError>> {
 	let connection = Connection::system()
 		.await
 		.map_err(SetTimezoneError::Connection)?;

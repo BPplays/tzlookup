@@ -1,6 +1,7 @@
 # tzlookup
 
-tzlookup is a fully automated utility to set the system time using geolocation.
+tzlookup is a fully automated utility to set the system time using geolocation.  
+forked from [tzupdate](https://github.com/cdown/tzupdate)
 
 ## Features
 
@@ -18,6 +19,7 @@ tzlookup is a fully automated utility to set the system time using geolocation.
 
 
 ```rust
+use std::time::Duration;
 use tzlookup::lookup;
 use tzlookup::file;
 
@@ -41,6 +43,7 @@ fn main() {
 
 or the systemd version (requires the `systemd` feature)
 ```rust
+use std::time::Duration;
 use tzlookup::lookup;
 
 // requires the feature 'systemd'

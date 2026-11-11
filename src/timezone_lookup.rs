@@ -237,7 +237,7 @@ impl From<String> for PossibleTimezone {
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimezoneLookupError {
-	#[error("All APIs failed. Run with RUST_LOG=tzupdate=debug for more information.")]
+	#[error("All APIs failed. Run with RUST_LOG=tzlookup=debug for more information.")]
 	AllApisFailed,
 
 	#[error("All APIs timed out, consider increasing --timeout.")]

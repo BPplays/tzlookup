@@ -1,6 +1,6 @@
-# tzupdate | [![Tests](https://img.shields.io/github/actions/workflow/status/cdown/tzupdate/ci.yml?branch=master)](https://github.com/cdown/tzupdate/actions?query=branch%3Amaster)
+# tzlookup
 
-tzupdate is a fully automated utility to set the system time using geolocation.
+tzlookup is a fully automated utility to set the system time using geolocation.
 
 ## Features
 
@@ -12,11 +12,15 @@ tzupdate is a fully automated utility to set the system time using geolocation.
 
 ## Installation
 
-    cargo install tzupdate
+    cargo install tzlookup
+
+## Add to Your Project
+
+    cargo add tzlookup
 
 ## Usage
 
-    # tzupdate
+    -> tzupdate
     Set system timezone to Europe/London.
 
 Internally, this geolocates you, gets the timezone for that geolocation, and
@@ -25,3 +29,47 @@ then updates the system's local time zone.
 You can see what tzupdate would do without actually doing it by passing `-p`,
 and specify an alternative IP address by using `-i`. This is not an exhaustive
 list of options, see `tzupdate --help` for that.
+
+you can also use it as a library
+
+```rust
+use tzlookup::lookup
+use tzlookup::file
+
+fn main() {
+    let tz = lookup::get_timezone(
+        mode,
+        cfg.timeout,
+        cfg.ip.as_ref(),
+    ).unwrap();
+    println!("{tz}");
+
+    file::set_timezone(
+        tz.identifier(),
+        "/etc/localtime",
+        "/usr/share/zoneinfo",
+        "/etc/timezone",
+        false,
+    )?;
+}
+```
+
+or the systemd version (requires the 'systemd' feature)
+```rust
+use tzlookup::lookup
+
+// requires the feature 'systemd'
+use tzlookup::systemd
+
+fn main() {
+
+    let tz = lookup::get_timezone(
+        mode,
+        cfg.timeout,
+        cfg.ip.as_ref(),
+    ).unwrap();
+    println!("{tz}");
+
+    systemd::set_tz(tz.identifier()).await.unwrap();
+}
+```

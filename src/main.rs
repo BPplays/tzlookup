@@ -132,6 +132,25 @@ fn return_supported_feat(feat: &str) {
 
 #[tokio::main]
 async fn main() -> AnResult<()> {
+
+
+    let tz = timezone_lookup::get_timezone(
+        mode,
+        cfg.timeout,
+        cfg.ip.as_ref(),
+    ).unwrap();
+    println!("{tz}");
+
+    file::set_timezone(
+        tz.identifier(),
+        "/etc/localtime",
+        "/usr/share/zoneinfo",
+        "/etc/timezone",
+        false,
+    )?;
+    systemd::set_tz(tz.identifier()).await.unwrap();
+
+
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("warn"));
 
     let cfg = Config::parse();

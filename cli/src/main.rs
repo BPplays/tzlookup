@@ -1,15 +1,20 @@
 use anyhow::Ok as AnOk;
 use anyhow::Result as AnResult;
 use clap::Parser;
-use log::info;
+use log::error;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
 
+
+#[cfg(target_os = "linux")]
 use tzlookup::file;
+
 use tzlookup::lookup;
 use tzlookup::lookup::PossibleTimezone;
+
+#[cfg(all(target_os = "linux"))]
 use tzlookup::systemd;
 
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display, strum::EnumString)]
@@ -159,11 +164,15 @@ async fn main() -> AnResult<()> {
 		sm::None => {
 			println!("{tz}");
 		}
+
+		#[cfg(target_os = "linux")]
 		sm::Systemd => {
 			info!("Got timezone {tz}");
+
 			systemd::set_tz(tz.identifier()).await?;
 			println!("Set system timezone to {tz}.");
 		}
+		#[cfg(target_os = "linux")]
 		sm::File => {
 			println!("{tz}");
 			info!("Got timezone {tz}");
@@ -175,6 +184,12 @@ async fn main() -> AnResult<()> {
 				cfg.always_write_debian_timezone,
 			)?;
 			println!("Set system timezone to {tz}.");
+		}
+
+		#[cfg(not(target_os = "linux"))]
+		sm::Systemd |
+		sm::File => {
+			error!("Not supported on this OS");
 		}
 	}
 

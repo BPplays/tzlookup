@@ -2,12 +2,12 @@ use log::{debug, trace};
 use serde_json::Value;
 use std::cmp::Reverse;
 use std::collections::HashMap;
+use std::fmt::{self, Display, Formatter};
 use std::net::IpAddr;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 use tz::TimeZone;
-use std::fmt::{self, Display, Formatter};
 
 struct GeoIPService {
 	url: &'static str,
@@ -73,72 +73,67 @@ fn get_nested_value(mut data: Value, keys: &[&str]) -> Option<Value> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum GeoIPError {
-    #[error("Failed to request {url}: {source}")]
-    Request {
-        url: String,
-        #[source]
-        source: ureq::Error,
-    },
+	#[error("Failed to request {url}: {source}")]
+	Request {
+		url: String,
+		#[source]
+		source: ureq::Error,
+	},
 
-    #[error("Failed to parse JSON response from {url}: {source}")]
-    ReadJson {
-        url: String,
-        #[source]
-        source: ureq::Error,
-    },
+	#[error("Failed to parse JSON response from {url}: {source}")]
+	ReadJson {
+		url: String,
+		#[source]
+		source: ureq::Error,
+	},
 
-    #[error("Invalid data for {url}")]
-    InvalidData {
-        url: String,
-    },
+	#[error("Invalid data for {url}")]
+	InvalidData { url: String },
 
-    #[error("Timezone field for {url} is not a string")]
-    TimezoneNotString {
-        url: String,
-    },
+	#[error("Timezone field for {url} is not a string")]
+	TimezoneNotString { url: String },
 }
 
 /// A single service worker, racing with others as part of `get_timezone`.
 fn get_timezone_for_ip(
-    url: &str,
-    service: &GeoIPService,
-    sender: Sender<String>,
+	url: &str,
+	service: &GeoIPService,
+	sender: Sender<String>,
 ) -> Result<(), GeoIPError> {
-    let mut res = ureq::get(url)
-        .call()
-        .map_err(|source| GeoIPError::Request {
-            url: url.to_owned(),
-            source,
-        })?;
-
-    let data = res
-        .body_mut()
-        .read_json::<Value>()
-        .map_err(|source| GeoIPError::ReadJson {
-            url: url.to_owned(),
-            source,
-        })?;
-
-	let val = get_nested_value(data, service.tz_keys)
-		.ok_or_else(|| GeoIPError::InvalidData {
+	let mut res = ureq::get(url)
+		.call()
+		.map_err(|source| GeoIPError::Request {
 			url: url.to_owned(),
+			source,
 		})?;
 
-    let val = match val {
-        Value::String(s) => s,
-        _ => {
-            return Err(GeoIPError::TimezoneNotString {
-                url: url.to_owned(),
-            });
-        }
-    };
+	let data = res
+		.body_mut()
+		.read_json::<Value>()
+		.map_err(|source| GeoIPError::ReadJson {
+			url: url.to_owned(),
+			source,
+		})?;
 
-    trace!("Sending {val} back to main thread from {url}");
+	let val = get_nested_value(data, service.tz_keys).ok_or_else(|| GeoIPError::InvalidData {
+		url: url.to_owned(),
+	})?;
 
-    // Only fails if receiver is disconnected, which means we lost the race.
-    let _ = sender.send(val);
+	let val = match val {
+		Value::String(s) => s,
+		_ => {
+			return Err(GeoIPError::TimezoneNotString {
+				url: url.to_owned(),
+			});
+		}
+	};
 
-    Ok(())
+	trace!("Sending {val} back to main thread from {url}");
+
+	// Only fails if receiver is disconnected, which means we lost the race.
+	let _ = sender.send(val);
+
+	Ok(())
 }
 
 /// Spawn workers for all SERVICES and return a handle for their responses.
@@ -162,8 +157,6 @@ fn spawn_requests(ip_addr: Option<&IpAddr>) -> SpawnedRequests {
 	}
 }
 
-
-
 pub enum TimezoneLookupStrategy {
 	FirstSuccessful,
 	MostFrequent,
@@ -178,31 +171,34 @@ pub enum PossibleTimezone {
 }
 
 impl PossibleTimezone {
-    pub fn identifier(&self) -> &str {
-        match self {
-            Self::KnownTimezone { identifier, .. } => identifier,
-            Self::UnknownTimezone(identifier) => identifier,
-        }
-    }
+	pub fn identifier(&self) -> &str {
+		match self {
+			Self::KnownTimezone { identifier, .. } => identifier,
+			Self::UnknownTimezone(identifier) => identifier,
+		}
+	}
 
-    pub fn tzdata(&self) -> Option<&TimeZone> {
-        match self {
-            Self::KnownTimezone { tzdata: timezone, .. } => Some(timezone),
-            Self::UnknownTimezone(_) => None,
-        }
-    }
+	pub fn tzdata(&self) -> Option<&TimeZone> {
+		match self {
+			Self::KnownTimezone {
+				tzdata: timezone, ..
+			} => Some(timezone),
+			Self::UnknownTimezone(_) => None,
+		}
+	}
 
-    pub fn is_known(&self) -> bool {
-        matches!(self, Self::KnownTimezone { .. })
-    }
+	pub fn is_known(&self) -> bool {
+		matches!(self, Self::KnownTimezone { .. })
+	}
 }
 
 impl Display for PossibleTimezone {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::KnownTimezone { identifier: value, .. } | Self::UnknownTimezone(value) => {
-				f.write_str(value)
+			Self::KnownTimezone {
+				identifier: value, ..
 			}
+			| Self::UnknownTimezone(value) => f.write_str(value),
 		}
 	}
 }
@@ -231,7 +227,6 @@ impl From<String> for PossibleTimezone {
 	}
 }
 
-
 #[derive(Debug, thiserror::Error)]
 pub enum TimezoneLookupError {
 	#[error("All APIs failed. Run with RUST_LOG=tzupdate=debug for more information.")]
@@ -241,16 +236,12 @@ pub enum TimezoneLookupError {
 	AllApisTimedOut,
 }
 
-
 /// Spawn background HTTP requests, returning the first timezone that replies.
 fn get_timezone_first(
 	timeout: Duration,
 	ip_to_lookup: Option<&IpAddr>,
 ) -> Result<PossibleTimezone, TimezoneLookupError> {
-	let SpawnedRequests {
-		receiver,
-		..
-	} = spawn_requests(ip_to_lookup);
+	let SpawnedRequests { receiver, .. } = spawn_requests(ip_to_lookup);
 
 	receiver
 		.recv_timeout(timeout)
@@ -260,8 +251,6 @@ fn get_timezone_first(
 		})
 		.map(PossibleTimezone::from)
 }
-
-
 
 /// Spawn background HTTP requests, collecting responses and choosing by consensus.
 /// If a strict majority (> 50%) is reached before the timeout, return immediately.
@@ -331,22 +320,13 @@ fn get_timezone_consensus(
 	Ok(PossibleTimezone::from(best_tz))
 }
 
-
-
 pub fn get_timezone(
-	mode:TimezoneLookupStrategy,
+	mode: TimezoneLookupStrategy,
 	timeout: Duration,
 	ip_to_lookup: Option<&IpAddr>,
 ) -> Result<PossibleTimezone, TimezoneLookupError> {
 	match mode {
-		TimezoneLookupStrategy::FirstSuccessful => {
-			get_timezone_first(timeout, ip_to_lookup)
-		}
-		TimezoneLookupStrategy::MostFrequent => {
-			get_timezone_consensus(timeout, ip_to_lookup)
-		}
+		TimezoneLookupStrategy::FirstSuccessful => get_timezone_first(timeout, ip_to_lookup),
+		TimezoneLookupStrategy::MostFrequent => get_timezone_consensus(timeout, ip_to_lookup),
 	}
 }
-
-
-

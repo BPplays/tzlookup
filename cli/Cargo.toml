@@ -4,6 +4,9 @@ name = "tzlookup-cli"
 description = "Set the system timezone based on IP geolocation."
 readme = "README.md"
 
+keywords = ["timezone", "localtime", "geolocation"]
+categories = ["command-line-utilities", "date-and-time"]
+
 version.workspace = true
 edition.workspace = true
 license.workspace = true

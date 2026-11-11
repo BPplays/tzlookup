@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context};
+use anyhow::{bail, Context};
 use anyhow::Result as AnResult;
 use log::debug;
 use serde_json::Value;
@@ -112,6 +112,11 @@ fn spawn_requests(ip_addr: Option<&IpAddr>) -> SpawnedRequests {
 
 
 
+pub enum TimezoneLookupStrategy {
+	FirstSuccessful,
+	MostFrequent,
+}
+
 pub enum PossibleTimezone {
 	KnownTimezone {
 		identifier: String,
@@ -186,14 +191,14 @@ pub enum TimezoneLookupError {
 
 
 /// Spawn background HTTP requests, returning the first timezone that replies.
-pub fn get_timezone_first(
-	ip_addr: Option<&IpAddr>,
+fn get_timezone_first(
 	timeout: Duration,
+	ip_to_lookup: Option<&IpAddr>,
 ) -> Result<PossibleTimezone, TimezoneLookupError> {
 	let SpawnedRequests {
 		receiver,
 		..
-	} = spawn_requests(ip_addr);
+	} = spawn_requests(ip_to_lookup);
 
 	receiver
 		.recv_timeout(timeout)
@@ -210,14 +215,14 @@ pub fn get_timezone_first(
 /// If a strict majority (> 50%) is reached before the timeout, return immediately.
 /// Otherwise, after the timeout or when all responses are in, return the most frequent
 /// timezone seen. Ties are broken by the earliest response among the tied values.
-pub fn get_timezone_consensus(
-	ip_addr: Option<&IpAddr>,
+fn get_timezone_consensus(
 	timeout: Duration,
+	ip_to_lookup: Option<&IpAddr>,
 ) -> Result<PossibleTimezone, TimezoneLookupError> {
 	let SpawnedRequests {
 		receiver,
 		svc_count,
-	} = spawn_requests(ip_addr);
+	} = spawn_requests(ip_to_lookup);
 
 	let deadline = Instant::now() + timeout;
 	let majority = svc_count / 2 + 1;
@@ -273,3 +278,23 @@ pub fn get_timezone_consensus(
 
 	Ok(PossibleTimezone::from(best_tz))
 }
+
+
+
+pub fn get_timezone(
+	mode:TimezoneLookupStrategy,
+	timeout: Duration,
+	ip_to_lookup: Option<&IpAddr>,
+) -> Result<PossibleTimezone, TimezoneLookupError> {
+	match mode {
+		TimezoneLookupStrategy::FirstSuccessful => {
+			get_timezone_first(timeout, ip_to_lookup)
+		}
+		TimezoneLookupStrategy::MostFrequent => {
+			get_timezone_consensus(timeout, ip_to_lookup)
+		}
+	}
+}
+
+
+

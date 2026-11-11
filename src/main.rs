@@ -1,25 +1,38 @@
-use anyhow::{Ok, Result};
+use anyhow::Result as AnResult;
+use anyhow::Ok as AnOk;
 use clap::{Parser};
 use log::info;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::process;
+use strum;
+use std::str::FromStr;
 
 mod file;
 mod timezone_lookup;
 use timezone_lookup::PossibleTimezone;
 mod systemd;
 
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display, strum::EnumString)]
+#[strum(serialize_all = "kebab-case")]
+enum TzSetMethod {
+    None,
+    Systemd,
+    File,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Config {
     #[arg(
-        short,
+        short = 'm',
         long,
-        help = "print the timezone, but don't update /etc/timezone or /etc/localtime"
+        help = "the method used for setting the timezone",
+        default_value_t = TzSetMethod::None,
+        value_parser = clap::value_parser!(TzSetMethod),
     )]
-    print_only: bool,
+    set_method: TzSetMethod,
 
     #[arg(
         short,
@@ -79,13 +92,6 @@ struct Config {
     timeout: Duration,
 
     #[arg(
-        short = 'y',
-        long,
-        help = "use systemd to set the timezone instead of build-in method",
-    )]
-    systemd: bool,
-
-    #[arg(
         short,
         long,
         help = "test if feature is supported by returning code 0, else returning 1"
@@ -112,8 +118,8 @@ fn list_features(sep: &str) -> String {
     FEATURES_SUPPORTED.join(sep)
 }
 
-fn parse_secs(arg: &str) -> Result<Duration> {
-    Ok(Duration::from_secs(arg.parse()?))
+fn parse_secs(arg: &str) -> AnResult<Duration> {
+    AnOk(Duration::from_secs(arg.parse()?))
 }
 
 fn return_supported_feat(feat: &str) {
@@ -124,28 +130,8 @@ fn return_supported_feat(feat: &str) {
     process::exit(1);
 }
 
-async fn set_tz(tz: &PossibleTimezone, cfg: Config) -> Result<()> {
-    if cfg.print_only { return Ok(()) }
-
-    if cfg.systemd {
-        systemd::set_tz(tz.identifier()).await?;
-    } else {
-        file::link_localtime(
-            tz.identifier(),
-            cfg.localtime_path,
-            cfg.zoneinfo_path,
-        )?;
-        file::write_timezone(
-            tz.identifier(),
-            cfg.debian_timezone_path,
-            cfg.always_write_debian_timezone,
-        )?;
-    }
-    return Ok(());
-}
-
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> AnResult<()> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("warn"));
 
     let cfg = Config::parse();
@@ -153,7 +139,7 @@ async fn main() -> Result<()> {
     if cfg.features_list {
         let features = list_features(&cfg.features_list_separator);
         println!("{features}");
-        return Ok(());
+        return AnOk(());
     }
 
     if let Some(feature) = cfg.feature_test.as_deref().filter(|s| {
@@ -165,28 +151,45 @@ async fn main() -> Result<()> {
     let tz = match cfg.timezone.clone() {
         Some(tz) => PossibleTimezone::from(tz),
         None => {
-            if cfg.consensus {
-                timezone_lookup::get_timezone_consensus(
-                    cfg.ip.as_ref(),
-                    cfg.timeout,
-                )?
+            let mode = if cfg.consensus {
+                timezone_lookup::TimezoneLookupStrategy::MostFrequent
             } else {
-                timezone_lookup::get_timezone_first(
-                    cfg.ip.as_ref(),
-                    cfg.timeout,
-                )?
-            }
+                timezone_lookup::TimezoneLookupStrategy::FirstSuccessful
+            };
+
+            timezone_lookup::get_timezone(
+                mode,
+                cfg.timeout,
+                cfg.ip.as_ref(),
+            )?
         }
     };
 
-    if cfg.print_only {
-        println!("{tz}");
-        return Ok(());
+    use TzSetMethod as sm;
+    match cfg.set_method {
+        sm::None => {
+            println!("{tz}");
+        }
+        sm::Systemd => {
+            info!("Got timezone {tz}");
+            systemd::set_tz(tz.identifier()).await?;
+            println!("Set system timezone to {tz}.");
+        }
+        sm::File => {
+            println!("{tz}");
+            info!("Got timezone {tz}");
+            file::set_timezone(
+                tz.identifier(),
+                cfg.localtime_path,
+                cfg.zoneinfo_path,
+                cfg.debian_timezone_path,
+                cfg.always_write_debian_timezone,
+            )?;
+            println!("Set system timezone to {tz}.");
+        }
+
     }
 
-    info!("Got timezone {tz}");
-    set_tz(&tz, cfg).await?;
-    println!("Set system timezone to {tz}.");
 
-    Ok(())
+    AnOk(())
 }

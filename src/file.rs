@@ -1,6 +1,6 @@
-use anyhow::{bail, Context, Result};
-use log::debug;
-use std::fs;
+use anyhow::Context;
+use log::{debug, trace};
+use std::{fs, result};
 use std::io::{self, Write};
 use std::os::linux::fs::MetadataExt;
 use std::os::unix::fs::{symlink, OpenOptionsExt};
@@ -13,13 +13,19 @@ use std::path::{Path, PathBuf};
 ///
 /// This function checks that the base directory of the zoneinfo database shares a common prefix
 /// with the absolute path of the requested zoneinfo file.
-fn safe_canonicalise_path(base: PathBuf, path: PathBuf) -> io::Result<PathBuf> {
-    if path.canonicalize()?.starts_with(base.canonicalize()?) {
+fn safe_canonicalise_path(
+    base: impl AsRef<Path>,
+    path: impl AsRef<Path>,
+) -> io::Result<impl AsRef<Path>> {
+    let base = base.as_ref();
+    let path_ref = path.as_ref();
+
+    if path_ref.canonicalize()?.starts_with(base.canonicalize()?) {
         Ok(path)
     } else {
         Err(io::Error::other(format!(
             "Directory traversal detected, {} is outside of {}",
-            path.display(),
+            path_ref.display(),
             base.display()
         )))
     }
@@ -30,7 +36,7 @@ fn safe_canonicalise_path(base: PathBuf, path: PathBuf) -> io::Result<PathBuf> {
 ///
 /// This must be in the same directory as `path` because we will later call `fs::rename` on it,
 /// which is only atomic when not cross device.
-fn get_tmp_path(path: &Path) -> Result<PathBuf> {
+fn get_tmp_path(path: &Path) -> io::Result<PathBuf> {
     tempfile::Builder::new()
         .tempfile_in(
             path.parent()
@@ -38,7 +44,48 @@ fn get_tmp_path(path: &Path) -> Result<PathBuf> {
         )?
         .into_temp_path()
         .canonicalize()
-        .map_err(anyhow::Error::from)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LinkLocaltimeError {
+    #[error("Failed to create temporary localtime path: {0}")]
+    CreateTempPath(#[from] io::Error),
+
+    #[error(
+        "Timezone \"{timezone}\" requested, but this timezone is not available on your operating system"
+    )]
+    TimezoneNotFound { timezone: String },
+
+    #[error("Failed to canonicalise timezone path")]
+    CanonicaliseTimezone(#[source] io::Error),
+
+    #[error("Failed to remove temporary localtime file")]
+    RemoveTempFile(#[source] io::Error),
+
+    #[error("Failed to create localtime symlink")]
+    CreateSymlink(#[source] io::Error),
+
+    #[error("Failed to read temporary localtime metadata")]
+    ReadTempMetadata(#[source] io::Error),
+
+    #[error("localtime path has no parent")]
+    MissingLocaltimeParent,
+
+    #[error("Failed to read localtime parent metadata")]
+    ReadParentMetadata(#[source] io::Error),
+
+    #[error(
+        "Cannot atomically rename, {} and {} are not on the same device",
+        .temporary_path.display(),
+        .localtime_path.display()
+    )]
+    DifferentDevices {
+        temporary_path: PathBuf,
+        localtime_path: PathBuf,
+    },
+
+    #[error("Failed to atomically rename localtime file")]
+    Rename(#[source] io::Error),
 }
 
 /// Atomically link to a timezone file from the zoneinfo db from `localtime_path`.
@@ -48,56 +95,74 @@ fn get_tmp_path(path: &Path) -> Result<PathBuf> {
 /// for information about how that works.
 pub fn link_localtime(
     timezone: &str,
-    localtime_path: PathBuf,
-    zoneinfo_path: PathBuf,
-) -> Result<()> {
-    let localtime_tmp_path = get_tmp_path(&localtime_path)?;
-    let unsafe_tz_path = zoneinfo_path.join(timezone);
-    let tz_path = match safe_canonicalise_path(zoneinfo_path, unsafe_tz_path) {
+    localtime_path: impl AsRef<Path>,
+    zoneinfo_path: impl AsRef<Path>,
+) -> std::result::Result<(), LinkLocaltimeError> {
+    let localtime_path = localtime_path.as_ref();
+    let zoneinfo_path = zoneinfo_path.as_ref();
+
+    let localtime_tmp_path = get_tmp_path(localtime_path)
+        .map_err(LinkLocaltimeError::CreateTempPath)?;
+
+    let tz_path = match safe_canonicalise_path(
+        zoneinfo_path,
+        zoneinfo_path.join(timezone),
+    ) {
         Ok(path) => path,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            bail!("Timezone \"{timezone}\" requested, but this timezone is not available on your operating system.");
+            return Err(LinkLocaltimeError::TimezoneNotFound {
+                timezone: timezone.to_owned(),
+            });
         }
-        Err(err) => bail!(err),
+        Err(err) => return Err(LinkLocaltimeError::CanonicaliseTimezone(err)),
     };
 
     if let Err(err) = fs::remove_file(&localtime_tmp_path) {
         if err.kind() != io::ErrorKind::NotFound {
-            bail!(err);
+            return Err(LinkLocaltimeError::RemoveTempFile(err));
         }
     }
 
-    debug!(
+    trace!(
         "Symlinking {} to {}",
         localtime_tmp_path.display(),
         tz_path.display()
     );
-    symlink(tz_path, &localtime_tmp_path)?;
+    symlink(tz_path, &localtime_tmp_path)
+        .map_err(LinkLocaltimeError::CreateSymlink)?;
 
-    // We should seek to avoid avoid /etc/localtime disappearing, even briefly, to avoid
+    // We should seek to avoid /etc/localtime disappearing, even briefly, to avoid
     // applications being unhappy -- that's why we insist on atomic rename.
-    let tmp_dev = localtime_tmp_path.metadata()?.st_dev();
+    let tmp_dev = localtime_tmp_path
+        .metadata()
+        .map_err(LinkLocaltimeError::ReadTempMetadata)?
+        .st_dev();
+
     let target_dev = localtime_path
         .parent()
-        .context("localtime path has no parent")?
-        .metadata()?
+        .ok_or(LinkLocaltimeError::MissingLocaltimeParent)?
+        .metadata()
+        .map_err(LinkLocaltimeError::ReadParentMetadata)?
         .st_dev();
 
     if tmp_dev != target_dev {
-        fs::remove_file(&localtime_tmp_path)?;
-        bail!(
-            "Cannot atomically rename, {} and {} are not on the same device",
-            localtime_tmp_path.display(),
-            localtime_path.display()
-        );
+        fs::remove_file(&localtime_tmp_path)
+            .map_err(LinkLocaltimeError::RemoveTempFile)?;
+
+        return Err(LinkLocaltimeError::DifferentDevices {
+            temporary_path: localtime_tmp_path,
+            localtime_path: localtime_path.to_owned(),
+        });
     }
 
-    debug!(
+    trace!(
         "Atomically renaming {} to {}",
         localtime_tmp_path.display(),
         localtime_path.display()
     );
-    fs::rename(localtime_tmp_path, localtime_path)?;
+
+    fs::rename(localtime_tmp_path, localtime_path)
+        .map_err(LinkLocaltimeError::Rename)?;
 
     Ok(())
 }
@@ -106,7 +171,13 @@ pub fn link_localtime(
 /// Without this, dpkg-reconfigure will nuke /etc/localtime on reconfigure.
 ///
 /// If `always_write` is false, we will skip when /etc/timezone doesn't exist.
-pub fn write_timezone(timezone: &str, filename: PathBuf, always_write: bool) -> io::Result<()> {
+pub fn write_debian_timezone(
+    timezone: &str,
+    filename: impl AsRef<Path>,
+    always_write: bool,
+) -> io::Result<()> {
+    let filename = filename.as_ref();
+
     let mut file = match fs::OpenOptions::new()
         .write(true)
         .create(always_write)
@@ -123,6 +194,42 @@ pub fn write_timezone(timezone: &str, filename: PathBuf, always_write: bool) -> 
     };
     let data = format!("{timezone}\n");
     file.write_all(data.as_bytes())
+}
+
+
+#[derive(Debug, thiserror::Error)]
+pub enum SetTimezoneError {
+    #[error(transparent)]
+    LinkLocaltime(#[from] LinkLocaltimeError),
+
+    #[error("Failed to update Debian timezone: {0}")]
+    WriteDebian(#[from] io::Error),
+}
+
+/// Sets the timezone
+pub fn set_timezone(
+    timezone: &str,
+    localtime_path: impl AsRef<Path>,
+    zoneinfo_path: impl AsRef<Path>,
+    debian_timezone_path: impl AsRef<Path>,
+    always_write_debian_timezone: bool,
+) -> Result<(), SetTimezoneError> {
+
+    link_localtime(
+        timezone,
+        localtime_path,
+        zoneinfo_path,
+    )
+    .map_err(SetTimezoneError::LinkLocaltime)?;
+
+    write_debian_timezone(
+        timezone,
+        debian_timezone_path,
+        always_write_debian_timezone,
+    )
+    .map_err(SetTimezoneError::WriteDebian)?;
+
+    return Ok(())
 }
 
 #[cfg(test)]

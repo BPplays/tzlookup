@@ -1,29 +1,61 @@
 [package]
-name = "tzupdate"
+name = "tzlookup"
 version = "3.2.0"
 edition = "2021"
-authors = ["Chris Down <chris@chrisdown.name>"]
+
+# deprecated
+# see: https://doc.rust-lang.org/cargo/reference/manifest.html#the-authors-field
+# authors = ["Chris Down <chris@chrisdown.name>"]
+
 description = "Set the system timezone based on IP geolocation."
-repository = "https://github.com/cdown/tzupdate"
+repository = "https://github.com/BPplays/tzlookup"
 readme = "README.md"
 keywords = ["timezone", "localtime", "geolocation"]
-categories = ["command-line-utilities"]
+categories = ["command-line-utilities", "date-and-time"]
 license = "MIT"
 rust-version = "1.74"
 
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "tzlookup"
+required-features = ["_bin"]
+
+[features]
+default = []
+
+systemd = [
+	"dep:zbus",
+	"dep:zbus_systemd",
+]
+
+
+_bin = [
+	"dep:tokio",
+	"dep:clap",
+	"systemd",
+]
+
+full = [
+	"systemd",
+]
+
 [dependencies]
-anyhow = "1.0.99"
-clap = { version = "4.5.46", default-features = false, features = ["std", "derive", "help"] }
 env_logger = { version = "0.11.8", features = ["humantime"], default-features = false }
 log = "0.4.27"
 serde_json = { version = "1.0.143", default-features = false }
 tempfile = "3.21.0"
 ureq = { version = "3.1.0", default-features = false, features = ["json", "rustls"] }
-zbus_systemd = { version = "0.26000.0", default-features = false, features = ["timedate1"] }
-zbus = { version = "5.14.0", default-features = false, features = ["tokio"] }
-tokio = { version = "1.54.1", features = ["full"] }
 thiserror = "2.0.20"
 tz-rs = "0.7.3"
+strum = { version = "0.28.0", features = ["derive"] }
+
+
+# optional
+zbus_systemd = { version = "0.26000.0", default-features = false, features = ["timedate1"], optional = true }
+zbus = { version = "5.14.0", default-features = false, features = ["tokio"], optional = true }
+
+clap = { version = "4.5.46", default-features = false, features = ["std", "derive", "help"], optional = true }
+tokio = { version = "1.54.1", features = ["full"], optional = true }
+anyhow = "1.0.104"

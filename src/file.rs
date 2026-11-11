@@ -1,5 +1,5 @@
 use log::{debug, trace};
-use std::{fs, result};
+use std::fs;
 use std::io::{self, Write};
 use std::os::linux::fs::MetadataExt;
 use std::os::unix::fs::{symlink, OpenOptionsExt};

@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::process;
 use strum;
-use std::str::FromStr;
 
 use tzlookup::file;
 use tzlookup::lookup;

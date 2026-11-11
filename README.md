@@ -12,25 +12,10 @@ tzlookup is a fully automated utility to set the system time using geolocation.
 
 ## Installation
 
-    cargo install tzlookup
-
-## Add to Your Project
-
     cargo add tzlookup
 
 ## Usage
 
-    -> tzlookup
-    Set system timezone to Europe/London.
-
-Internally, this geolocates you, gets the timezone for that geolocation, and
-then updates the system's local time zone.
-
-You can set what tzlookup will do by using `-m` with (`none`, `systemd`, `file`),
-and specify an alternative IP address by using `-i`. This is not an exhaustive
-list of options, see `tzlookup --help` for that.
-
-you can also use it as a library
 
 ```rust
 use tzlookup::lookup;
@@ -54,7 +39,7 @@ fn main() {
 }
 ```
 
-or the systemd version (requires the 'systemd' feature)
+or the systemd version (requires the `systemd` feature)
 ```rust
 use tzlookup::lookup;
 
